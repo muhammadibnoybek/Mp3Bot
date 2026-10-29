@@ -24,14 +24,13 @@ shazam = Shazam()
 # 1. START BUYRUG'I: Menyu chiqarish
 # ------------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Rejimni tozalaymiz (agar oldin tanlangan bo'lsa)
     context.user_data['mode'] = None
     
     text = (
         "👋 <b>Assalomu alaykum!</b>\n\n"
         "🤖 Men <b>@Video_mpRobot</b> man. Iltimos, nima qilishni xohlayotganingizni tanlang:\n\n"
         "🎬 <b>Video → MP3:</b> Videoni musiqaga aylantirish.\n"
-        "🎵 <b>Musiqa aniqlash:</b> Ovoz yoki audiodagi qo'shiqni topish.\n\n"
+        "🎵 <b>Musiqa aniqlash:</b> Video, ovoz yoki audiodagi qo'shiqni topish.\n\n"
         "⚠️ <b>Diqqat:</b> Render bepul tarifi tufayli faqat <b>20 MB</b> gacha bo'lgan fayllar ishlaydi."
     )
     
@@ -60,7 +59,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "mode_shazam":
         context.user_data['mode'] = 'shazam'
         await query.edit_message_text(
-            text="🎵 <b>Musiqa aniqlash rejimi tanlandi!</b>\n\nEndi menga ovozli xabar yoki audio fayl yuboring, men undagi musiqani topaman.",
+            text="🎵 <b>Musiqa aniqlash rejimi tanlandi!</b>\n\nEndi menga video, ovozli xabar yoki audio fayl yuboring, men undagi musiqani topaman.",
             parse_mode="HTML"
         )
 
@@ -89,7 +88,6 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     mode = context.user_data.get('mode')
     
-    # Agar foydalanuvchi rejim tanlamagan bo'lsa
     if not mode:
         await msg.reply_text("Iltimos, avval /start buyrug'ini bosib, kerakli bo'limni tanlang.")
         return
@@ -134,12 +132,9 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Rejimga qarab tekshirish
+    # Faqat MP3 rejimida audio qabul qilmaslik
     if mode == 'mp3' and is_audio:
         await msg.reply_text("❌ Siz <b>Video → MP3</b> rejimini tanladingiz. Iltimos, video yuboring.\nYoki /start bosib boshqa rejimni tanlang.", parse_mode="HTML")
-        return
-    elif mode == 'shazam' and not is_audio:
-        await msg.reply_text("❌ Siz <b>Musiqa aniqlash</b> rejimini tanladingiz. Iltimos, ovozli xabar yoki audio yuboring.\nYoki /start bosib boshqa rejimni tanlang.", parse_mode="HTML")
         return
 
     # Faylni yuklab olish
@@ -161,11 +156,22 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Agar rejim 'shazam' bo'lsa
         if mode == 'shazam':
             await status.edit_text("🎵 Musiqa aniqlanmoqda...")
-            music_info = await recognize_music(in_path)
+            
+            # Agar foydalanuvchi video yuborgan bo'lsa, avval undan ovozni ajratib olamiz
+            if not is_audio:
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", in_path, "-vn", "-acodec", "libmp3lame", "-q:a", "6", out_path],
+                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                music_info = await recognize_music(out_path)
+            else:
+                # Agar allaqachon audio bo'lsa, to'g'ridan-to'g'ri aniqlaymiz
+                music_info = await recognize_music(in_path)
+
             if music_info:
                 await status.edit_text(music_info, parse_mode="HTML")
             else:
-                await status.edit_text("😔 Kechirasiz, musiqa aniqlanmadi. Boshqa fayl sinab ko'ring.")
+                await status.edit_text("😔 Kechirasiz, bu fayldan musiqa aniqlanmadi. Boshqa fayl sinab ko'ring.")
             return
 
         # Agar rejim 'mp3' bo'lsa
@@ -207,7 +213,7 @@ def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler)) # Tugmalarni ushlash
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(
         filters.VIDEO | filters.VIDEO_NOTE | filters.ANIMATION |
         filters.Document.VIDEO | filters.VOICE | filters.AUDIO,
